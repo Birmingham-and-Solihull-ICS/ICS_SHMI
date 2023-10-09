@@ -1,0 +1,364 @@
+---
+title: "SHMI report"
+output:
+  html_document:
+    toc: true
+    toc_depth: 6
+    mathjax: null
+    css: doc.css
+params: 
+    include_tech_app: FALSE
+    include_mortality: TRUE
+    include_activity: TRUE
+    include_place: TRUE
+    include_ethnicity: TRUE
+    include_coding: FALSE
+    include_admission_method: TRUE
+    include_risk: FALSE
+    include_end_of_life: TRUE
+    include_VLAD: TRUE
+    include_CUSUM: FALSE
+    include_funnel_condition: TRUE
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)    #tidyverse functions
+library(scales)       #chart scales
+library(lubridate)    #working with dates
+library(NHSRplotthedots) # SPC charts
+library(ggiraph)      #interactive charts
+library(knitr)        #render
+library(cusum)        #CUSUM
+library(readxl)
+
+library(sqldf)
+library(kableExtra)
+
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(
+  comment = "#>", echo = FALSE, warning = FALSE, message = FALSE, include = FALSE
+)
+```
+
+
+```{r functions}
+source("visual_format.R")
+source("knit_children.R")
+```
+
+```{r data loads}
+
+shmi_data_file <- read.csv('shmi_data_file.rpt', header = TRUE)
+
+#rename col1
+colnames(shmi_data_file)[1] <- "CSURowNumber"
+
+#pivot wider
+shmi_data_file <- shmi_data_file %>%
+  mutate(P_SPELL_ADMIDATE = ymd(substr(P_SPELL_ADMIDATE,1,10)),
+         P_SPELL_DISDATE = ymd(substr(P_SPELL_DISDATE,1,10)),
+         COMBINED_PALLIATIVE_FLAG = ifelse(TREATMENT_PALLIATIVE_FLAG == "Y" | DIAGNOSIS_PALLIATIVE_FLAG == "Y",
+                                           "Y","N")) %>%
+  rename(P_SPELL_DISMETH = P_SEPLL_DISMETH) %>%
+rename(LOPATID = PatientId)%>%
+  rename(DIAG_1 = DIAG_01)%>%
+  rename(DIAG_2 = DIAG_02)%>%
+  rename(DIAG_3 = DIAG_03)%>%
+  rename(DIAG_4 = DIAG_04)%>%
+  rename(DIAG_5 = DIAG_05)%>%
+  rename(DIAG_6 = DIAG_06)%>%
+  rename(DIAG_7 = DIAG_07)%>%
+  rename(DIAG_8 = DIAG_08)%>%
+  rename(DIAG_9 = DIAG_09)%>%
+  rename(EthnicCategoryCode = Ethnic_Code)
+
+#write_rds(shmi_data_file,"shmi_data_file.rds")
+shmi_data_file <- read_rds("shmi_data_file.rds")
+
+shmi_data_file <- shmi_data_file %>%
+  filter(P_SPELL_DISDATE >=  '2020-04-01' & P_SPELL_DISDATE < '2023-03-01')
+
+```
+
+```{r}
+shmi_risk_file <- read.csv('shmi_risk2.csv', header = TRUE)
+shmi_risk_file <- shmi_risk_file %>% 
+ select (-DIED, -GENDER, -X, - AGE_GROUP, -ADMIMETH, -DIAG_GROUP, - BIRWEIT_GROUP) %>%
+ rename(RISK = shmi_estimate) %>%
+  mutate(CSURowNumber = as.character(CSURowNumber))
+
+shmi_data_file <- shmi_data_file %>% 
+                  inner_join(shmi_risk_file, by = c("CSURowNumber") )
+
+shmi_data_file <- shmi_data_file %>%
+  distinct(CSURowNumber, .keep_all = TRUE)
+
+risk<- shmi_data_file %>% select(RISK)
+Died<- shmi_data_file %>% select(DIED)
+```
+
+```{r}
+data_shmi <- shmi_data_file
+
+data_shmi <- data_shmi %>%
+  transform(discharge_date = as.Date(P_SPELL_DISDATE, "%d/%m/%Y")) %>%
+  transform(admission_date = as.Date(P_SPELL_ADMIDATE, "%d/%m/%Y")) %>%
+  mutate(
+      #   IMD_RK = as.numeric(IMD_RK),
+       DIAG_EPIKEY = CSURowNumber,
+         P_SPELL_START_AGE = as.numeric(P_SPELL_START_AGE),
+         DIED_IN_HOSPITAL = ifelse(P_SPELL_DISMETH == 4, 1, 0),
+         PalliativeCare = ifelse(TREATMENT_PALLIATIVE_FLAG == "Y" |
+                                 DIAGNOSIS_PALLIATIVE_FLAG == "Y" |
+                                 COMBINED_PALLIATIVE_FLAG == "Y", 1, 0),
+         endoflifepathway = case_when(
+           DIED_IN_HOSPITAL == 1 & PalliativeCare == 1 ~ "Died in hospital - pallaitve",
+           DIED_IN_HOSPITAL == 1 & PalliativeCare == 0 ~ "Died in hospital - not pallaitve",
+           DIED_IN_HOSPITAL == 0 & DIED == 1 & PalliativeCare == 1 ~ "Died outside hospital - pallaitve",
+           DIED_IN_HOSPITAL == 0 & DIED == 1 & PalliativeCare == 0 ~ "Died outside hospital - pallaitve",
+           TRUE ~ "Alive"
+         ),
+         weekbeginning = floor_date(discharge_date, unit = "week"),
+         discharge_yyyy_mm = floor_date(discharge_date, unit = "month"),
+         admission_method = case_when(
+           ADMIMETH == 1 ~ "Elective",
+           ADMIMETH == 2 ~ "Unknown",
+           ADMIMETH == 3 ~ "Acute",
+           TRUE~"NA"
+           )
+         )
+
+last_spell <- data_shmi %>%
+  group_by(LOPATID) %>%
+  summarise(last_spell = max(discharge_date))
+
+#add last spell
+data_shmi <- left_join(data_shmi, last_spell)
+
+
+SHMI_groups <- read_xlsx("ICD10_to_CCS_Diagnostic_Labels.xlsx")
+
+data_shmi <- left_join(data_shmi, SHMI_groups, by = c("DIAG_GROUP" = "SHMI_DIAGNOSIS_GROUP")) %>%
+  select(-CCS_CATEGORIES)
+
+#add row number to enable cbind USE DIAG_
+Depth_of_coding <- data_shmi %>%
+  select(DIAG_EPIKEY, DIAG_2, DIAG_3, DIAG_4, DIAG_5, DIAG_6, DIAG_7, DIAG_8, DIAG_9, DIAG_10, DIAG_11, DIAG_12, DIAG_13, DIAG_14, DIAG_15, DIAG_16, DIAG_17, DIAG_18, DIAG_19, DIAG_20) %>%
+  pivot_longer(cols = c(2:20), names_to = "DIAG_POSITION", values_to = "DIAG") %>%
+  filter(!is.na(DIAG)) %>%
+  group_by(DIAG_EPIKEY) %>%
+  summarise(CODING_DEPTH = n())
+
+data_shmi <- left_join(data_shmi, Depth_of_coding)
+data_shmi$CODING_DEPTH <- ifelse(is.na(data_shmi$CODING_DEPTH), 0, data_shmi$CODING_DEPTH)
+
+
+```
+
+```{r summary measures by month}
+
+summary_month_data <- data_shmi %>%
+  group_by(discharge_yyyy_mm) %>%
+  summarise(Spells = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            SHMI = round(sum(DIED, na.rm=TRUE) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round((sum(DIED, na.rm=TRUE) / n()) * 100, 2),
+            Depthofcoding = round(mean(CODING_DEPTH, na.rm=TRUE), 1),
+            Average_CCS = round(mean(P_SPELL_CHARLSON, na.rm=TRUE), 2),
+            Palliative_care_pct = round((sum(PalliativeCare, na.rm=TRUE) / n()) * 100, 2))
+
+```
+
+```{r Excess_deaths by condition}
+#create bar chart for excess conditions
+
+by_condition <- data_shmi %>%
+  group_by(one_word) %>%
+  summarise(Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            balance_deaths = round(sum(RISK) + (sum(DIED) - sum(RISK, na.rm=TRUE)), 0)) %>%
+  mutate(
+#create series for survivors where excess deaths are <0
+    survivors = ifelse(Excess_deaths < 0, Excess_deaths, NA),
+#create series for excess mortality exc survivors
+    excess_mortality = ifelse(Excess_deaths > 0, Excess_deaths, NA)
+  ) %>%
+#to simplify chart presentation only show conditions with more than 5 deaths
+  filter(Observed >= 5)
+
+by_condition_plot_order <- by_condition %>%
+  mutate(
+   plot_order = dense_rank(desc(Excess_deaths))) %>%
+  select(one_word, plot_order)
+
+by_condition_longer <- by_condition %>%
+  pivot_longer(cols = !one_word, names_to = "measure", values_to = "value")
+
+by_condition_longer <- left_join(by_condition_longer, by_condition_plot_order, by = c("one_word" = "one_word"))
+
+by_condition_chart <- by_condition_longer %>%
+  mutate(
+    measure_tooltip = case_when(
+      measure == "excess_mortality" ~ "More deaths than expected",
+      measure == "balance_deaths" ~ "Expected number of deaths",
+      measure == "survivors" ~ "Fewer deaths than expected",
+      TRUE ~ "NA"),
+    tooltip = paste0(one_word, "\n",
+                    measure_tooltip, "; ", value),
+    one_word = fct_reorder(one_word, desc(plot_order))) %>%
+  filter(measure_tooltip != "NA") %>%
+  ggplot() +
+  geom_col_interactive(aes(x = one_word, y = value, fill = measure_tooltip, tooltip = tooltip), position = position_stack(reverse = TRUE)) +
+  coord_flip() +
+  labs(y = "Deaths") +
+  scale_fill_manual_interactive(values = conditions.excess.colors, labels = function(x) str_wrap(x, width = 10)) +
+  theme_i7() + theme(axis.text.y = element_text(size = rel(0.75)),
+                     axis.title.x = element_text(size = rel(0.75)),
+                    axis.title.y = element_blank(),
+                    strip.text = element_text(size = rel(0.75)),
+                   legend.key = element_rect(fill = "white"))
+
+```
+  
+
+
+```{r spc for crude deaths}
+
+df_crude <- data_shmi %>%
+  mutate(discharge_yy_mm = ym(format(discharge_date, "%Y-%m"))
+  ) %>%
+  group_by(discharge_yy_mm) %>%
+  summarise(Spells = n(), 
+            Observed = sum(DIED, na.rm=TRUE), 
+            Crude = round(sum(DIED, na.rm=TRUE) / n() * 100, 2)) 
+
+spc <- df_crude %>%
+  ptd_spc(value_field = Crude, date_field = discharge_yy_mm, improvement_direction = "decrease") %>%
+  ptd_create_ggplot(y_axis_label = "Crude rate",
+                    main_title = "SPC of crude rate",
+                              x_axis_date_format = "%m/%y",
+                              x_axis_breaks = "1 months")
+
+```
+
+
+```{r summary table}
+
+total_data <- data_shmi %>%
+  summarise(Spells = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            SHMI = round(sum(DIED, na.rm=TRUE) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate =  round((sum(DIED, na.rm=TRUE) / n()) * 100, 2),
+            Depthofcoding = round(mean(CODING_DEPTH, na.rm=TRUE), 1),
+            Average_CCS = round(mean(P_SPELL_CHARLSON, na.rm=TRUE), 2),
+            Palliative_care_spells = sum(PalliativeCare, na.rm=TRUE),
+            Palliative_care_pct = round((sum(PalliativeCare, na.rm=TRUE) / n()) * 100, 2),
+            reportfrom = min(discharge_yyyy_mm, na.rm=TRUE),
+            reportto = max(discharge_yyyy_mm, na.rm=TRUE)
+  )
+
+from <- min(total_data$reportfrom, na.rm=TRUE)
+to <- max(total_data$reportto, na.rm=TRUE)
+reportfor_shmi <- max(total_data$SHMI, na.rm=TRUE)
+  
+
+total_data_longer <- pivot_longer(total_data, c(1:10), names_to = "measure") %>%
+  select(measure, value)
+
+total_data_longer$measure_label <- factor(total_data_longer$measure, ordered = TRUE,  levels = c("SHMI", "Spells", "Observed", "Expected", "Excess_deaths", "Crude_rate", "Depthofcoding", "Palliative_care_spells", "Palliative_care_pct", "Average_CCS"),
+       labels = c("SHMI", "Spells", "Observed", "Expected", "Excess deaths", "Crude death rate per 100 spells", "Depth of coding", "Palliative care coded (%spells)", "Palliative care coded (%deaths)", "Average Charlson Score"))
+
+total_data_longer <- total_data_longer %>%
+  select(measure_label, value) %>%
+  arrange(measure_label) %>%
+  rename(Measure = "measure_label") %>%
+  rename(Value = "value")
+
+
+```
+
+
+
+```{r title, results="asis"}
+
+#titles
+
+title <- paste0("SHMI for period from ", from, " to ", to)
+
+```
+
+### `r title` 
+
+### Crude death rate
+ 
+```{r spc_chart, include=TRUE}
+
+spc
+
+```
+
+### Excess deaths by condition
+    
+```{r condition chart, include=TRUE}
+ 
+girafe(ggobj = by_condition_chart,
+       width_svg = 10, height_svg = 10,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+
+```
+
+### Summary
+    
+```{r table, results="asis",include = TRUE}
+ 
+print(kable(total_data_longer))
+```
+
+```{r knit mortality ,eval = params$include_mortality, child = "dashboard_mortality.Rmd"}
+```
+
+```{r knit activity ,eval = params$include_activity, child = "dashboard_activity.Rmd"}
+```
+
+```{r knit ethnicity, eval = params$include_ethnicity, child = "dashboard_ethnicity.Rmd"}
+```
+
+
+```{r knit place, eval = params$include_place, child = "dashboard_place.Rmd"}
+```
+
+
+```{r knit funnel condition, eval = params$include_funnel_condition, child = "dashboard_funnel_condition.Rmd"}
+```
+
+```{r knit coding, eval=params$include_coding, child = "dashboard_coding.Rmd"}
+```
+
+```{r knit admission method, eval = params$include_admission_method, child = "dashboard_admission_method.Rmd"}
+```
+
+```{r knit VLAD , eval = params$include_VLAD, child = "dashboard_VLAD.Rmd"}
+```
+
+```{r knit CUSUM , eval = params$include_CUSUM, child = "dashboard_CUSUM.Rmd"}
+```
+
+```{r knit end of life, eval = params$include_end_of_life, child = "dashboard_end_of_life.Rmd"}
+```
+
+```{r knit_risk, eval = params$include_risk, child = "dashboard_risk.Rmd"}
+```
+
+```{r knit_technical_appendix, eval = params$include_tech_app, child = "dashboard_technical_appendix.Rmd"}
+```

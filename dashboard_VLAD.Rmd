@@ -1,0 +1,125 @@
+---
+title: "VLAD"
+author: "Richard Wilson"
+output: html_document
+---
+
+```{r vlad prep, results = "asis"}
+
+library(ggpubr)
+library(cowplot)
+
+vlad_data <- data_shmi %>%
+  select(discharge_date, DIAG_GROUP, one_word, DIED, RISK)
+
+vlad_data <- sqldf("select discharge_date, DIAG_GROUP, DIED,RISK, one_word from vlad_data order by 2, 1")
+
+vlad_data <- vlad_data %>% 
+  mutate(
+    vlad =  DIED * -1 + (RISK),
+    excess_deaths = DIED - RISK
+  )
+
+Rho_u  =  0.5
+Rho_l   = 2
+h_lower = 4.2
+h_upper = -4.2
+
+vlads <- vlad_data %>%
+  group_by(DIAG_GROUP) %>%
+  group_by(DIAG_GROUP) %>%
+  na.omit(vlad) %>%
+  mutate(
+    vlad_cusum = cumsum(vlad),
+    id = row_number(),
+    excess_deaths_cumsum = cumsum(excess_deaths),
+    deaths_cumsum = cumsum(DIED), 
+    WL_n =  DIED * log(Rho_l) - log( 1 + (Rho_l - 1) * RISK),
+    WU_n =  DIED * log(Rho_u) - log( 1 + (Rho_u - 1) * RISK),
+    CL_n = ifelse(WL_n >= h_lower,WL_n, 0),
+    CU_n = ifelse(WU_n >= h_upper,WU_n, 0),
+    CL_n = ifelse(lag(WL_n) >= h_lower,
+                          ifelse(WL_n > 0 ,WL_n, 0),
+                          ifelse(lag(CL_n) + WL_n > 0 ,lag(CL_n) + WL_n, 0)),
+    CU_n = ifelse(lag(WU_n) <= h_upper,
+                          ifelse(WU_n*-1 > 0 ,WU_n*-1, 0),
+                          ifelse(lag(CU_n) - WU_n > 0 ,lag(CU_n) + WU_n, 0)),
+    LL_n = vlad_cusum + (CL_n - h_lower) / log(Rho_l),
+    LU_n = vlad_cusum - (CU_n - h_upper) / log(Rho_u)
+  )
+
+#find last entry by diagnosis group
+
+filter_last_day <- vlads %>%
+group_by(DIAG_GROUP) %>%
+  summarise( id = max(id))
+
+vlad_onlastday_list <- inner_join(vlads, filter_last_day)
+
+vlad_worst_list<- vlad_onlastday_list %>%
+  filter(LU_n < 0 & deaths_cumsum >10) %>%
+  select(DIAG_GROUP)
+
+vlad_better_list<- vlad_onlastday_list %>%
+  filter(LL_n > 0 & deaths_cumsum >10) %>%
+  select(DIAG_GROUP)
+
+vlad_worse <- inner_join(vlads, vlad_worst_list)
+vlad_better <- inner_join(vlads, vlad_better_list)
+
+vlad_worse_plot <- vlad_worse %>%
+    ggplot(aes(x = id, y = vlad_cusum)) +
+  geom_line(colour = "red") +
+  geom_hline(yintercept = 0, colour = "darkgrey", linetype = 2) +
+  geom_line(aes(x = id, y = LL_n), colour = "orange") +
+  geom_line(aes(x = id, y = LU_n), colour = "orange") +
+  facet_wrap(~one_word, scales = "free") +
+  theme_i7() +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        strip.text.x = element_text(size = 8))
+
+vlad_better_plot <- vlad_better %>%
+    ggplot(aes(x = id, y = vlad_cusum)) +
+  geom_line(colour = "darkgreen") +
+  geom_hline(yintercept = 0, colour = "darkgrey", linetype = 2) +
+  geom_line(aes(x = id, y = LL_n), colour = "orange") +
+  geom_line(aes(x = id, y = LU_n), colour = "orange") +
+  facet_wrap(~one_word, scales = "free") +
+  theme_i7() +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        strip.text.x = element_text(size = 8))
+
+
+
+vlad_text <- paste("VLAD charts show cumulative survival",
+             "line drops when a patient dies",
+             "line goes up when a patient survives,",
+             "a steady decline implies outcomes are typically worse than expected.",
+             "a step change implies something substantial changed",
+             "in care, patient case, or coding", sep = "\n")
+
+# Create a text grob
+vwtgrob <- text_grob(vlad_text, color = "steelblue")
+
+```
+
+### VLAD improving
+```{r vlad better charts, include = TRUE,  fig.hieght = 5, fig.width = 16}
+if (nrow(vlad_better) > 0) {
+  #plot_grid(vwtgrob, vlad_better_plot, rel_widths = c(1, 3))
+  vlad_better_plot
+} else {print("No conditions with 10 or more deaths")}
+```
+
+### VLAD worsening
+
+```{r vlad worse tab, include = TRUE ,  fig.hieght = 5, fig.width = 16}
+if (nrow(vlad_worse) > 0) {
+  #plot_grid(vwtgrob, vlad_worse_plot, rel_widths = c(1, 3))
+  vlad_worse_plot
+} else {print("No conditions with 10 or more deaths")}
+```

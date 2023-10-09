@@ -1,0 +1,345 @@
+---
+params:
+  filedateperiod: "Apr22-Mar23"
+author: "Richard Wilson"
+sub title:"email: richard.wilson28@nhs.net"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+ html_document: 
+  toc: true # table of content true
+  toc_depth: 1 # upto three depths of headings (specified by #, ## and ###)
+  number_sections: true ## if you want number sections at each table header
+  theme: cosmo
+---
+
+```{r}
+library(tidyverse) # tidyverse functions
+library(sqldf)
+library(comorbidity) # add Charlson scores
+library(lubridate)
+library(readxl)
+```
+
+```{r load model data files}
+
+### date of new period ----
+filedateperiod <- params$filedateperiod
+
+# add Periodend as YYYY-MM-DD
+PeriodEnd <- paste0(substr(filedateperiod, 1, 5), "_", substr(filedateperiod, 7, 11))
+month_str <- case_when(
+  substr(filedateperiod, 7, 9) == "Jan" ~ "01",
+  substr(filedateperiod, 7, 9) == "Feb" ~ "02",
+  substr(filedateperiod, 7, 9) == "Mar" ~ "03",
+  substr(filedateperiod, 7, 9) == "Apr" ~ "04",
+  substr(filedateperiod, 7, 9) == "May" ~ "05",
+  substr(filedateperiod, 7, 9) == "Jun" ~ "06",
+  substr(filedateperiod, 7, 9) == "Jul" ~ "07",
+  substr(filedateperiod, 7, 9) == "Aug" ~ "08",
+  substr(filedateperiod, 7, 9) == "Sep" ~ "09",
+  substr(filedateperiod, 7, 9) == "Oct" ~ "10",
+  substr(filedateperiod, 7, 9) == "Nov" ~ "11",
+  substr(filedateperiod, 7, 9) == "Dec" ~ "12",
+  TRUE ~ "00"
+)
+Perioddate <- as.Date(paste0("20", substr(filedateperiod, 10, 11), "-", month_str, "-01"))
+
+year_of_model_end <- as.Date(paste0("20", substr(filedateperiod, 10, 11), "-", month_str, "-01"))
+
+year_of_model_start <- as.Date(paste0("20", substr(filedateperiod, 4, 5), "-", month_str, "-01"))
+
+
+
+#zip archive for period identified
+#zipname <- paste0("../data/SHMI data files, ", filedateperiod, ".zip")
+
+#foldername <- "SHMI statistical model data/"
+filename <- paste0("SHMI model predict statistics, ", filedateperiod, " (csv).csv")
+#file <- paste0(foldername, filename)
+
+#open elective deaths file
+shmiModel <- read_csv(filename)
+shmiModel <- shmiModel[, -(5:8)]
+shmiModel <- shmiModel[, -1]
+
+# create look up tables for each predictor
+shmi_age <- shmiModel %>% filter(substr(PREDICTOR, 1, 3) == "AGE")
+shmi_gender <- shmiModel %>% filter(substr(PREDICTOR, 1, 3) == "GEN")
+shmi_admimeth <- shmiModel %>% filter(substr(PREDICTOR, 1, 5) == "ADMIM")
+shmi_charlson <- shmiModel %>% filter(substr(PREDICTOR, 1, 3) == "CHA")
+shmi_birweit <- shmiModel %>% filter(substr(PREDICTOR, 1, 3) == "BIR")
+shmi_admission_month <- shmiModel %>% filter(substr(PREDICTOR, 1, 5) == "ADMIS")
+shmi_year <- shmiModel %>% filter(substr(PREDICTOR, 1, 3) == "YEA")
+
+# read in ICD10 to SHMI look up tables
+SHMI_ICD10 <- read_xlsx("ICD-10_code_SHMI_lookup.xlsx")
+SHMI_ICD10 <- SHMI_ICD10[, -2]
+SHMI_groups <- read_xlsx("ICD10_to_CCS_Diagnostic_Labels.xlsx")
+
+# read in spell level data
+test.data <- read_rds('shmi_data_file.rds')
+
+# only use fields needed if not already set up
+# not P_SEPLL_DISMETH
+test.data <- test.data %>%  
+  filter(P_SPELL_DISDATE >= year_of_model_start %m-% months(23)  
+         & P_SPELL_DISDATE <= year_of_model_end) %>%
+  select(CSURowNumber, DIAG_EPIKEY, DIED,  P_SPELL_ADMIMETH, BIRWEIT_1, GENDER, P_SPELL_START_AGE, P_SPELL_ADMIDATE, P_SPELL_DISDATE, P_SPELL_DISMETH, DIAG_1, DIAG_2, DIAG_3, DIAG_4, DIAG_5, DIAG_6, DIAG_7,  DIAG_8, DIAG_9, DIAG_10, DIAG_11, DIAG_12, DIAG_13, DIAG_14, DIAG_15, DIAG_16, DIAG_17, DIAG_18, DIAG_19, DIAG_20)
+
+
+```
+
+```{r Charlson}
+
+# create table for calculating charlson - only needs ID and DIAG_2 to DIAG 20
+##   Gasparini, (2018). comorbidity: An R package for computing comorbidity scores. Journal
+##   of Open Source Software, 3(23), 648, https://doi.org/10.21105/joss.00648
+
+conditions <- select(test.data, DIAG_EPIKEY, DIAG_2, DIAG_3, DIAG_4, DIAG_5, DIAG_6, DIAG_7,
+  DIAG_8, DIAG_9, DIAG_10, DIAG_11, DIAG_12, DIAG_13, DIAG_14, DIAG_15, DIAG_16, DIAG_17,
+  DIAG_18, DIAG_19, DIAG_20)
+
+# trim test.data as now do not need the DIAG2:20
+test.data <- select(test.data,CSURowNumber,  DIAG_EPIKEY, DIED, DIAG_1, P_SPELL_ADMIMETH, BIRWEIT_1, GENDER, P_SPELL_START_AGE, P_SPELL_ADMIDATE, P_SPELL_DISDATE, P_SPELL_DISMETH, DIAG_1)
+
+# read in charlson weights
+charlson <- read_xlsx("charlson.xlsx")
+
+# as charlson has both 3 and 4 digit codes set up look up files for each matching
+charlson_4strcodes <- charlson %>% filter(nchar(icd10) == 4)
+charlson_3strcodes <- charlson %>% filter(nchar(icd10) == 3)
+
+# make conditions into longer format and trim any whitespace
+conditions_long <- gather(conditions, diag_num, code, DIAG_2:DIAG_20)
+conditions_long$code <- trimws(conditions_long$code)
+
+# find comorbidities by join
+conditions_long4str <- inner_join(conditions_long, charlson_4strcodes, by = c("code" = "icd10"))
+conditions_long3str <- conditions_long
+conditions_long3str$code <- substr(conditions_long3str$code, 1, 3)
+conditions_long3str <- inner_join(conditions_long3str, charlson_3strcodes, by = c("code" = "icd10"))
+
+# bind 3 and 4 digit finds into one
+charlson_wgts <- rbind(conditions_long4str, conditions_long3str)
+
+# do join on select * from charlson group by ID, name to remove duplicates
+charlson_wgts <- sqldf("select DIAG_EPIKEY, condition, code, charlson from charlson_wgts group by DIAG_EPIKEY, condition ")
+
+# need way to exclude cancer where metastatic cancer are both present then the weight for cancer is ignored.
+
+# sum up weights by ID
+
+charlson_wgts <- charlson_wgts %>%
+  group_by(DIAG_EPIKEY) %>%
+  summarise(wgt = sum(charlson, na.rm = TRUE))
+
+# add wieghts to spell
+test.data <- left_join(test.data, charlson_wgts)
+
+# add SHMI diagnosis categories and text
+test.data <- left_join(test.data, SHMI_ICD10, by = c("DIAG_1" = "ICD-10 CODE"))
+test.data <- left_join(test.data, SHMI_groups, by = c("SHMI_DIAGNOSIS_GROUP" = "SHMI_DIAGNOSIS_GROUP"))
+test.data <- rename(test.data, DIAG_GROUP = SHMI_DIAGNOSIS_GROUP)
+
+# group charlson into SHMI categories
+test.data <- test.data %>%
+  mutate(CHARLSON_INDEX_WGT = case_when(
+    wgt >= 1 & wgt <= 5 ~ "2",
+    wgt > 5 ~ "3",
+    TRUE ~ "1",
+  ))
+
+```
+
+```{r}
+# group admission method into SHMI categories
+test.data <- rename(test.data, ADMISSION_METHOD = P_SPELL_ADMIMETH)
+
+test.data <- test.data %>%
+  mutate(ADMISSION_METHOD = case_when(
+    substr(ADMISSION_METHOD, 1, 1) == "1" ~ "1",
+    substr(ADMISSION_METHOD, 1, 1) == "9" ~ "2",
+    TRUE ~ "3",
+  ))
+```
+
+```{r}
+# group Birthweight into SHMI categories
+test.data$BIRWEIT <- ifelse((test.data$DIAG_GROUP < 115 | test.data$DIAG_GROUP > 119) & test.data$DIAG_GROUP != 141, 6, NA)
+test.data$BIRWEIT_1 <- as.integer(test.data$BIRWEIT_1)
+
+test.data <- test.data %>%
+  mutate(BIRWEIT_GROUP = case_when(
+    BIRWEIT == 6 ~ "6",
+    BIRWEIT_1 < 1000 ~ "1",
+    BIRWEIT_1 >= 1000 & BIRWEIT_1 < 2500 ~ "2",
+    BIRWEIT_1 >= 2500 & BIRWEIT_1 < 4500 ~ "3",
+    BIRWEIT_1 >= 4500 ~ "4",
+    is.na(BIRWEIT_1) ~ "5",
+    TRUE ~ "6",
+  ))
+```
+
+```{r}
+# group GENDER into SHMI categories
+test.data <- test.data %>%
+  mutate(GENDER = case_when(
+    substr(GENDER, 1, 1) == "1" ~ "1",
+    substr(GENDER, 1, 1) == "2" ~ "2",
+    TRUE ~ "3",
+  ))
+
+```
+
+```{r}
+# group STARTAGE into SHMI categories
+test.data <- rename(test.data, STARTAGE = P_SPELL_START_AGE)
+
+test.data$STARTAGE <- as.integer(test.data$STARTAGE)
+test.data <- test.data %>%
+  mutate(AGE_GROUP = case_when(
+    STARTAGE >= 7000 & STARTAGE <= 7007 ~ "1",
+    STARTAGE >= 1 & STARTAGE <= 4 ~ "2",
+    STARTAGE >= 5 & STARTAGE <= 9 ~ "3",
+    STARTAGE >= 10 & STARTAGE <= 14 ~ "4",
+    STARTAGE >= 15 & STARTAGE <= 19 ~ "5",
+    STARTAGE >= 20 & STARTAGE <= 24 ~ "6",
+    STARTAGE >= 25 & STARTAGE <= 29 ~ "7",
+    STARTAGE >= 30 & STARTAGE <= 34 ~ "8",
+    STARTAGE >= 35 & STARTAGE <= 39 ~ "9",
+    STARTAGE >= 40 & STARTAGE <= 44 ~ "10",
+    STARTAGE >= 45 & STARTAGE <= 49 ~ "11",
+    STARTAGE >= 50 & STARTAGE <= 54 ~ "12",
+    STARTAGE >= 54 & STARTAGE <= 59 ~ "13",
+    STARTAGE >= 60 & STARTAGE <= 64 ~ "14",
+    STARTAGE >= 65 & STARTAGE <= 69 ~ "15",
+    STARTAGE >= 70 & STARTAGE <= 74 ~ "16",
+    STARTAGE >= 75 & STARTAGE <= 79 ~ "17",
+    STARTAGE >= 80 & STARTAGE <= 84 ~ "18",
+    STARTAGE >= 85 & STARTAGE <= 89 ~ "19",
+    STARTAGE >= 90 & STARTAGE <= 120 ~ "20",
+    TRUE ~ "21"
+  ))
+```
+
+
+```{r}
+# add month of admission
+test.data <- rename(test.data, ADMIDATE = P_SPELL_ADMIDATE)
+test.data <- transform(test.data, ADMIDATE = as.Date(ADMIDATE, "%Y-%m-%d"))
+
+test.data$ADMISSION_MONTH <- month(test.data$ADMIDATE)
+
+test.data <- transform(test.data, DATE_OF_DISCHARGE = as.Date(P_SPELL_DISDATE, "%Y-%m-%d"))
+```
+
+```{r}
+# add year of discharge
+test.data <- test.data %>%
+  mutate(YEAR = case_when(
+    DATE_OF_DISCHARGE >= year_of_model_start & DATE_OF_DISCHARGE < year_of_model_end ~ "1",
+    DATE_OF_DISCHARGE >= year_of_model_start - 365 & DATE_OF_DISCHARGE < year_of_model_end - 365 ~ "2",
+    DATE_OF_DISCHARGE >= year_of_model_start - 730 & DATE_OF_DISCHARGE < year_of_model_end - 730 ~ "3",
+    TRUE ~ "NA"
+  ))
+
+```
+
+```{r}
+# add DIED in hospital flag
+test.data <- test.data %>%
+  mutate(DIED_IN_HOSPITAL = case_when(
+    P_SPELL_DISMETH == 4 ~ "1", # "Died in hospital"
+    TRUE ~ "0"
+  ))
+
+```
+
+```{r}
+# add risk to data
+risk <- test.data
+# to match on intercept for each diag group need dummy variable Intercept
+risk$Intercept <- "Intercept"
+
+# create matching data to model fields
+risk$ADMIMETH <- paste0("ADMIMETH_", risk$ADMISSION_METHOD)
+risk$AGE_GROUP <- paste0("AGE_GROUP_", risk$AGE_GROUP)
+risk$GENDER <- paste0("GENDER_", risk$GENDER)
+risk$CHARLSON_INDEX_WGT <- paste0("CHARLSON_INDEX_", risk$CHARLSON_INDEX_WGT)
+risk$ADMISSION_MONTH <- paste0("ADMISSION_MONTH_", risk$ADMISSION_MONTH)
+risk$BIRWEIT_GROUP <- paste0("BIRWEIT_GROUP_", risk$BIRWEIT_GROUP)
+
+# add risk by join
+risk <- left_join(risk, shmiModel, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "Intercept" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(InterceptRisk = PARAMETER_ESTIMATE) %>%
+  select(-PARAMETER_ESTIMATE)
+
+risk <- left_join(risk, shmi_age, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "AGE_GROUP" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(AgeRisk = PARAMETER_ESTIMATE) %>%
+  select(-PARAMETER_ESTIMATE)
+
+risk <- left_join(risk, shmi_gender, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "GENDER" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(GenderRisk = PARAMETER_ESTIMATE) %>%
+  select(-PARAMETER_ESTIMATE)
+
+risk <- left_join(risk, shmi_admimeth, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "ADMIMETH" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(AdmimethRisk = PARAMETER_ESTIMATE) %>%
+  select(-PARAMETER_ESTIMATE)
+
+risk <- left_join(risk, shmi_admission_month, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "ADMISSION_MONTH" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(MonthRisk = PARAMETER_ESTIMATE) %>%
+  select(-PARAMETER_ESTIMATE)
+
+risk <- left_join(risk, shmi_charlson, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "CHARLSON_INDEX_WGT" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(CharlsonRisk = PARAMETER_ESTIMATE) %>%
+  select(-PARAMETER_ESTIMATE)
+
+risk <- left_join(risk, shmi_birweit, by = c("DIAG_GROUP" = "DIAGNOSIS_GROUP", "BIRWEIT_GROUP" = "PREDICTOR"))
+risk <- risk %>%
+  mutate(BirweitRisk = PARAMETER_ESTIMATE,
+         BirweitRisk = ifelse(is.na(BirweitRisk),0,BirweitRisk)
+         )%>%
+  select(-PARAMETER_ESTIMATE)
+
+# set year risk to 0 unless using multiple data years
+risk$YearRisk <- 0
+```
+
+
+```{r}
+# calculate risk
+risk <- risk %>% mutate(
+  shmi_est = exp(InterceptRisk
+  + BirweitRisk
+    + CharlsonRisk
+    + MonthRisk
+    + YearRisk
+    + AdmimethRisk
+    + GenderRisk
+    + AgeRisk) /
+    (1 + exp(InterceptRisk
+    + BirweitRisk
+      + CharlsonRisk
+      + MonthRisk
+      + YearRisk
+      + AdmimethRisk
+      + GenderRisk
+      + AgeRisk)
+    ),
+  shmi_estimate = round(shmi_est, 3)
+)
+```
+
+```{r}
+# write out risk
+risk <- select( risk, CSURowNumber,DIAG_EPIKEY, DIED, shmi_estimate, DIAG_GROUP, InterceptRisk, BIRWEIT_GROUP, BirweitRisk, CHARLSON_INDEX_WGT, CharlsonRisk, ADMISSION_MONTH, MonthRisk, YEAR, YearRisk, ADMIMETH, AdmimethRisk, GENDER, GenderRisk, AGE_GROUP, AgeRisk, short_label
+)
+
+write.csv(risk, "shmi_risk2.csv")
+```

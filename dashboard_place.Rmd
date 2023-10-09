@@ -1,0 +1,552 @@
+---
+title: "dashboard_place"
+author: "Richard Wilson"
+output: html_document
+---
+
+### acorn
+
+```{r acorn}
+
+
+acorn_data <- data_shmi %>%
+  filter(str_length(WellbeingAcornTypeDescription) >1) %>%
+  group_by( WellbeingAcornTypeDescription, WellbeingAcornTypeCode) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            SHMI = round(sum(DIED, na.rm=TRUE) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round((sum(DIED, na.rm=TRUE) / n()) * 100, 2)
+            )
+
+acorn_plot <- acorn_data %>%
+  filter(WellbeingAcornTypeCode != "99" & Observed >= 5 ) %>%
+  mutate(tooltip = paste0(WellbeingAcornTypeDescription, "\n",
+                            "SHMI : ", round(SHMI, 1), " ")) %>%
+  ggplot(aes(x=reorder(WellbeingAcornTypeDescription, SHMI), y = SHMI)) +
+  geom_col_interactive(aes(tooltip = tooltip), fill = "blue") +
+  geom_hline(yintercept = 1) +
+  coord_flip() +
+  ylab("SHMI") +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6),
+        axis.text.y = element_text(size = 8),
+        axis.title.y = element_blank()
+        )
+
+```
+
+```{r acorn shmi, include = TRUE}
+
+girafe(ggobj = acorn_plot,
+      # width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```
+
+### acorn
+
+```{r acorn house}
+
+
+acorn_house_data <- data_shmi %>%
+  filter(str_length(AcornHouseholdType) >1) %>%
+  group_by( AcornHouseholdType) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            SHMI = round(sum(DIED, na.rm=TRUE) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round((sum(DIED, na.rm=TRUE) / n()) * 100, 2)
+            )
+
+acorn_house_plot <- acorn_house_data %>%
+  filter(AcornHouseholdType != "99" & Observed >= 5 ) %>%
+  mutate(tooltip = paste0(AcornHouseholdType, "\n",
+                            "SHMI : ", round(SHMI, 1), " ")) %>%
+  ggplot(aes(x=reorder(AcornHouseholdType, SHMI), y = SHMI)) +
+  geom_col_interactive(aes(tooltip = tooltip), fill ="blue") +
+  geom_hline(yintercept = 1) +
+  coord_flip() +
+  ylab("SHMI") +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6),
+        axis.text.y = element_text(size = 8),
+        axis.title.y = element_blank()
+        )
+
+```
+
+```{r acorn house shmi, include = TRUE}
+
+girafe(ggobj = acorn_house_plot,
+      # width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```
+
+
+### LSOA
+
+```{r lsoa}
+
+lsoa_data <- data_shmi %>%
+  group_by( LowerLayerSuperOutputArea) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            SHMI = round(sum(DIED, na.rm=TRUE) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round((sum(DIED, na.rm=TRUE) / n()) * 100, 2)
+            ) %>%
+  filter(Discharges >100)
+
+lsoa_plot <- lsoa_data %>%
+  mutate(tooltip = paste0(LowerLayerSuperOutputArea, "\n",
+                            "SHMI : ", round(SHMI, 1), " ")) %>% 
+  arrange(SHMI) %>%
+  ggplot(aes(x=reorder(LowerLayerSuperOutputArea, SHMI), y = SHMI)) +
+  geom_col_interactive(aes(tooltip = tooltip)) +
+  xlab("LSOA") +
+  ylab("measure") +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6))
+
+```
+
+```{r lsoa shmi, include = FALSE}
+
+girafe(ggobj = lsoa_plot,
+      # width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```
+
+```{r  funnel LSOA}
+
+library(FunnelPlotR)  #funnel plots
+
+LSOA_funnel <- data_shmi %>%
+  group_by(LowerLayerSuperOutputArea) %>%
+  summarise(Excess_deaths = round(sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED, na.rm=TRUE),
+            balance_deaths = round(sum(RISK, na.rm=TRUE) + (sum(DIED, na.rm=TRUE) - sum(RISK, na.rm=TRUE)), 0)) %>%
+  mutate(
+#create series for survivors where excess deaths are <0
+    survivors = ifelse(Excess_deaths < 0, Excess_deaths, NA),
+#create series for excess mortality exc survivors
+    excess_mortality = ifelse(Excess_deaths > 0, Excess_deaths, NA)) %>%
+#to simplify chart presentation only show conditions with more than 5 deaths
+  filter(Observed >= 1
+         & substr(LowerLayerSuperOutputArea,1,1) == "E")
+
+#create funnel for conditions using FunnelPlotR
+funnel_plot_data <- funnel_plot( denominator = LSOA_funnel$Expected,
+                                 numerator = LSOA_funnel$Observed,
+                                 group = LSOA_funnel$LowerLayerSuperOutputArea,  
+                                 limit=95)
+
+funnel_plot_data_lsoa <- funnel_plot_data$aggregated_data
+
+limits <- limits(funnel_plot_data)
+
+#tidy up column names into user friendly labels
+limits <- limits %>%
+  rename(limit_x = "number.seq") %>%
+  select(limit_x, ul95, ll95, ll998, ul998) %>%
+  filter(limit_x >= 1) %>%
+  arrange(ll95)
+
+funnel_plot_data_lsoa <- funnel_plot_data_lsoa %>%
+  rename(SHMI = "rr") %>%
+#create column to describe the 3 groups of points for the chart
+  mutate(
+#set up outlier points - this time there are two limits used 95 and 99.8% limits
+    linegroups = case_when(
+      SHMI > UCL99 ~"Higher than expected 99.8% limits",
+      SHMI > UCL95 ~ "Higher than expected 95% limits",
+      SHMI < LCL99 ~ "Lower than expected 99.8% limits",
+      SHMI < LCL95 ~ "Lower than expected 95% limits",
+      TRUE ~ "As expected"),
+#round SHMI to just 3 points
+        SHMI = round(SHMI, 3),
+#add column for excess deaths and for absolute version for sizing markers
+        `Excess deaths` = numerator - denominator,
+        abs_excess = abs(`Excess deaths`),
+#add shmi index line
+         index = 1) %>%
+  #tidy up user friendly labels
+rename(`Expected deaths` = "denominator") %>%
+rename(`Observed` = "numerator") %>%
+rename(`Lower limit` = "OD95LCL") %>%
+rename(`Upper limit` = "OD95UCL") %>%
+rename(LowerLayerSuperOutputArea = "group")
+
+funnel_plot_data_lsoa <- funnel_plot_data_lsoa %>%
+  filter(`Expected deaths` >= 1) %>%
+   mutate(tooltip = paste0(LowerLayerSuperOutputArea, ": ", SHMI))
+
+
+ylimMin <- ifelse(min(funnel_plot_data_lsoa$SHMI, na.rm = TRUE) - 0.1 < 0,0,
+                  min(funnel_plot_data_lsoa$SHMI, na.rm = TRUE) - 0.1)
+
+ylimMax <- max(funnel_plot_data_lsoa$SHMI, na.rm = TRUE)+0.1
+
+funnel_plot_lsoa <- ggplot() +
+  geom_line(funnel_plot_data_lsoa, mapping = aes(x = `Expected deaths`, y = index), linetype = 2, colour = "black") +
+  geom_point_interactive(funnel_plot_data_lsoa, mapping = aes(x = `Expected deaths`, y = SHMI, colour = linegroups, size = abs_excess, tooltip = tooltip)) +
+  geom_line(limits, mapping = aes(limit_x, ul95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ul998), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll998), colour = "grey") +
+    scale_size("Excess deaths") +
+  ylim(ylimMin, ylimMax) +
+  scale_colour_manual_interactive(values = funnel.conditions.colors) +
+  labs(x = "Expected deaths", y = "SHMI", size = "Excess Deaths", shape = "Excess deaths")+
+ theme_i7() +
+  theme(plot.title =  element_text(size = rel(2)),
+        axis.line.x =  element_blank(),
+        axis.text.x =  element_text(size = rel(1)),
+        axis.text.y =  element_text(size = rel(1)),
+        axis.title.x =  element_text(size = rel(1.5)),
+        axis.title.y =  element_text(size = rel(1.5)),
+        legend.key = element_rect(fill = "white"),
+        legend.position = "right",
+        legend.text =  element_text(size = rel(1))
+        )
+
+```
+
+```{r LSOA funnel_chart, results = "asis", include = TRUE, fig.width = 12}
+
+girafe(ggobj = funnel_plot_lsoa,
+       width_svg = 12, height_svg = 6,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css,use_fill = TRUE)
+    ))
+```
+
+### PCN
+
+```{r PCN}
+
+PCN_data <- data_shmi %>%
+  group_by(PCN) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            SHMI = round(sum(DIED) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round(sum(DIED / n()) * 100, 2)
+            ) %>%
+  filter(Discharges >100 
+         & !str_detect(PCN, 'E0')
+         & !str_detect(PCN, 'NULL')
+  )
+
+PCN_plot <- PCN_data %>%
+  mutate(tooltip = paste0(PCN, "\n",
+                            "PCN : ", round(SHMI, 1), " ")) %>%
+  ggplot(aes(x=reorder(PCN, SHMI), y = SHMI)) +
+  geom_col_interactive(aes(tooltip = tooltip)) +
+  geom_hline(yintercept = 1) +
+  coord_flip() +
+  xlab("PCN") +
+  ylab("SHMI") +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6),
+        axis.text.y = element_text(size = 8))
+
+```
+
+```{r PCN shmi, include = TRUE}
+
+girafe(ggobj = PCN_plot,
+      # width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```
+
+
+
+```{r  funnel PCN}
+
+pcn_funnel <- data_shmi %>%
+  group_by(PCN) %>%
+  summarise(Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            balance_deaths = round(sum(RISK, na.rm=TRUE) + (sum(DIED) - sum(RISK, na.rm=TRUE)), 0)) %>%
+  mutate(
+#create series for survivors where excess deaths are <0
+    survivors = ifelse(Excess_deaths < 0, Excess_deaths, NA),
+#create series for excess mortality exc survivors
+    excess_mortality = ifelse(Excess_deaths > 0, Excess_deaths, NA)) %>%
+#to simplify chart presentation only show conditions with more than 5 deaths
+  filter(Observed >= 1
+         & !str_detect(PCN, 'E0')
+         & !str_detect(PCN, 'NULL')
+         )
+
+#create funnel for conditions using FunnelPlotR
+#call FunnelPlotR to create funnel chart data
+
+funnel_plot_data <- funnel_plot(numerator = pcn_funnel$Observed,
+                                denominator = pcn_funnel$Expected,
+                                group = pcn_funnel$PCN,  title = "PCN",
+                                Poisson_limits = FALSE, OD_adjust = TRUE, sr_method = "SHMI",
+                                label_outliers = FALSE)
+
+funnel_plot_data_pcn <- funnel_plot_data$aggregated_data
+
+limits <- limits(funnel_plot_data)
+
+#tidy up column names into user friendly labels
+limits <- limits %>%
+  rename(limit_x = "number.seq") %>%
+  select(limit_x, ul95, ll95, ll998, ul998) %>%
+  filter(limit_x >= 1) %>%
+  arrange(ll95)
+
+funnel_plot_data_pcn <- funnel_plot_data_pcn %>%
+  rename(SHMI = "rr") %>%
+#create column to describe the 3 groups of points for the chart
+  mutate(
+#set up outlier points - this time there are two limits used 95 and 99.8% limits
+    linegroups = case_when(
+      SHMI > UCL99 ~"Higher than expected 99.8% limits",
+      SHMI > UCL95 ~ "Higher than expected 95% limits",
+      SHMI < LCL99 ~ "Lower than expected 99.8% limits",
+      SHMI < LCL95 ~ "Lower than expected 95% limits",
+      TRUE ~ "As expected"),
+#round SHMI to just 3 points
+        SHMI = round(SHMI, 3),
+#add column for excess deaths and for absolute version for sizing markers
+        `Excess deaths` = numerator - denominator,
+        abs_excess = abs(`Excess deaths`),
+#add shmi index line
+         index = 1) %>%
+  #tidy up user friendly labels
+rename(`Expected deaths` = "denominator") %>%
+rename(`Observed` = "numerator") %>%
+rename(`Lower limit` = "OD95LCL") %>%
+rename(`Upper limit` = "OD95UCL") %>%
+rename(PCN = "group")
+
+ylimMin <- ifelse(min(funnel_plot_data_pcn$SHMI, na.rm = TRUE) - 0.1 < 0,0,
+                  min(funnel_plot_data_pcn$SHMI, na.rm = TRUE) - 0.1)
+
+ylimMax <- max(funnel_plot_data_pcn$SHMI, na.rm = TRUE)+0.1
+
+funnel_plot_data_pcn <- funnel_plot_data_pcn %>%
+  filter(`Expected deaths` >= 1) %>%
+   mutate(tooltip = paste0(PCN, ": ", SHMI))
+
+funnel_plot_pcn <- ggplot() +
+  geom_line(funnel_plot_data_pcn, mapping = aes(x = `Expected deaths`, y = index), linetype = 2, colour = "black") +
+  geom_point_interactive(funnel_plot_data_pcn, mapping = aes(x = `Expected deaths`, y = SHMI, colour = linegroups, size = abs_excess, tooltip = tooltip)) +
+  geom_line(limits, mapping = aes(limit_x, ul95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ul998), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll998), colour = "grey") +
+    scale_size("Excess deaths") +
+  scale_colour_manual_interactive(values = funnel.conditions.colors) +
+  ylim(ylimMin, ylimMax) +
+  labs(x = "Expected deaths", y = "SHMI", size = "Excess Deaths", shape = "Excess deaths")+
+ theme_i7() +
+  theme(plot.title =  element_text(size = rel(2)),
+        axis.line.x =  element_blank(),
+        axis.text.x =  element_text(size = rel(1)),
+        axis.text.y =  element_text(size = rel(1)),
+        axis.title.x =  element_text(size = rel(1.5)),
+        axis.title.y =  element_text(size = rel(1.5)),
+        legend.key = element_rect(fill = "white"),
+        legend.position = "right",
+        legend.text =  element_text(size = rel(1))
+        )
+
+```
+
+```{r PCN funnel_chart, results = "asis", include = TRUE, fig.width = 12}
+
+girafe(ggobj = funnel_plot_pcn,
+       width_svg = 12, height_svg = 6,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css,use_fill = TRUE)
+    ))
+```
+
+#GP
+
+
+```{r  funnel GP}
+
+GP_funnel <- data_shmi %>%
+  group_by(GP_Code) %>%
+  summarise(Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            balance_deaths = round(sum(RISK, na.rm=TRUE) + (sum(DIED) - sum(RISK, na.rm=TRUE)), 0)) %>%
+  mutate(
+#create series for survivors where excess deaths are <0
+    survivors = ifelse(Excess_deaths < 0, Excess_deaths, NA),
+#create series for excess mortality exc survivors
+    excess_mortality = ifelse(Excess_deaths > 0, Excess_deaths, NA)) %>%
+#to simplify chart presentation only show conditions with more than 5 deaths
+  filter(Observed >= 1
+         & !str_detect(GP_Code, 'NULL')
+         )
+
+#create funnel for conditions using FunnelPlotR
+#call FunnelPlotR to create funnel chart data
+
+funnel_plot_data <- funnel_plot(numerator = GP_funnel$Observed,
+                                denominator = GP_funnel$Expected,
+                                group = GP_funnel$GP_Code,  title = "GP",
+                                Poisson_limits = FALSE, OD_adjust = TRUE, sr_method = "SHMI",
+                                label_outliers = FALSE)
+
+funnel_plot_data_GP <- funnel_plot_data$aggregated_data
+
+limits <- limits(funnel_plot_data)
+
+#tidy up column names into user friendly labels
+limits <- limits %>%
+  rename(limit_x = "number.seq") %>%
+  select(limit_x, ul95, ll95, ll998, ul998) %>%
+  filter(limit_x >= 1) %>%
+  arrange(ll95)
+
+funnel_plot_data_GP <- funnel_plot_data_GP %>%
+  rename(SHMI = "rr") %>%
+#create column to describe the 3 groups of points for the chart
+  mutate(
+#set up outlier points - this time there are two limits used 95 and 99.8% limits
+    linegroups = case_when(
+      SHMI > UCL99 ~"Higher than expected 99.8% limits",
+      SHMI > UCL95 ~ "Higher than expected 95% limits",
+      SHMI < LCL99 ~ "Lower than expected 99.8% limits",
+      SHMI < LCL95 ~ "Lower than expected 95% limits",
+      TRUE ~ "As expected"),
+#round SHMI to just 3 points
+        SHMI = round(SHMI, 3),
+#add column for excess deaths and for absolute version for sizing markers
+        `Excess deaths` = numerator - denominator,
+        abs_excess = abs(`Excess deaths`),
+#add shmi index line
+         index = 1) %>%
+  #tidy up user friendly labels
+rename(`Expected deaths` = "denominator") %>%
+rename(`Observed` = "numerator") %>%
+rename(`Lower limit` = "OD95LCL") %>%
+rename(`Upper limit` = "OD95UCL") %>%
+rename(GP = "group")
+
+
+funnel_plot_data_GP <- funnel_plot_data_GP %>%
+  filter(`Expected deaths` >= 1) %>%
+   mutate(tooltip = paste0(GP, ": ", SHMI, "\n",
+                           "Observed deaths: ",Observed, "\n",
+                           "Expected deaths: ", `Expected deaths`))
+
+
+ylimMin <- ifelse(min(funnel_plot_data_GP$SHMI, na.rm = TRUE) - 0.1 < 0,0,
+                  min(funnel_plot_data_GP$SHMI, na.rm = TRUE) - 0.1)
+
+ylimMax <- max(funnel_plot_data_GP$SHMI, na.rm = TRUE)+0.1
+
+funnel_plot_GP <- ggplot() +
+  geom_line(funnel_plot_data_GP, mapping = aes(x = `Expected deaths`, y = index), linetype = 2, colour = "black") +
+  geom_point_interactive(funnel_plot_data_GP, mapping = aes(x = `Expected deaths`, y = SHMI, colour = linegroups, size = abs_excess, tooltip = tooltip)) +
+  geom_line(limits, mapping = aes(limit_x, ul95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ul998), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll998), colour = "grey") +
+    scale_size("Excess deaths") +
+  scale_colour_manual_interactive(values = funnel.conditions.colors) +
+  ylim(ylimMin, ylimMax) +
+  labs(x = "Expected deaths", y = "SHMI", size = "Excess Deaths", shape = "Excess deaths")+
+ theme_i7() +
+  theme(plot.title =  element_text(size = rel(2)),
+        axis.line.x =  element_blank(),
+        axis.text.x =  element_text(size = rel(1)),
+        axis.text.y =  element_text(size = rel(1)),
+        axis.title.x =  element_text(size = rel(1.5)),
+        axis.title.y =  element_text(size = rel(1.5)),
+        legend.key = element_rect(fill = "white"),
+        legend.position = "right",
+        legend.text =  element_text(size = rel(1))
+        )
+
+```
+
+```{r GP funnel_chart, results = "asis", include = TRUE, fig.width = 12}
+
+girafe(ggobj = funnel_plot_GP,
+       width_svg = 12, height_svg = 6,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css,use_fill = TRUE)
+    ))
+```
+
+
+### locality
+
+```{r locality}
+
+localities <- c("West", "East", "Solihull", "Central", "South", "North")
+locality_data <- data_shmi %>%
+  group_by(locality) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            SHMI = round(sum(DIED) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round(sum(DIED / n()) * 100, 2)
+            ) %>%
+  mutate(
+    SHMI_plot_below_1 = ifelse(SHMI < 1, 1 , SHMI),
+    SHMI_plot_mask_below_1 =  ifelse(SHMI < 1,  SHMI , 1),
+  ) %>%
+  filter(Discharges >100 & locality %in% localities)
+
+locality_plot <- locality_data %>%
+  mutate(tooltip = paste0(locality, "\n",
+                            "Locality : ", round(SHMI, 1), " ")) %>%
+  ggplot() +
+  geom_col_interactive(aes(x = locality, y = SHMI, tooltip = tooltip), fill = 'red') +
+  geom_col(aes(x = locality, y = SHMI_plot_below_1), fill = 'green') +
+  geom_col(aes(x = locality, y = SHMI_plot_mask_below_1), fill = 'white', colour = 'white') +
+  geom_hline(yintercept = 1) +
+  xlab("Locality") +
+  ylab("SHMI") +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6))
+
+```
+
+```{r locality shmi, include = TRUE}
+
+girafe(ggobj = locality_plot,
+      # width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```

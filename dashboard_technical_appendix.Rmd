@@ -1,0 +1,131 @@
+---
+title: "Manual"
+author: "Richard Wilson"
+output: html_document
+---
+ 
+Manual {data-orientation = rows}
+=====================================
+
+Row
+-------------------------------------
+### SHMI
+
+The SHMI is the ratio between the actual number of patients who die following hospitalisation at the trust and the number that would be expected to die on the basis of average England figures, given the characteristics of the patients treated there. It includes deaths which occurred in hospital and deaths which occurred outside of hospital within 30 days (inclusive) of discharge. Deaths related to COVID-19 are excluded from the SHMI.
+
+The SHMI gives an indication for each non-specialist acute NHS trust in England whether the observed number of deaths within 30 days of discharge from hospital was 'higher than expected' (SHMI banding=1), 'as expected' (SHMI banding=2) or 'lower than expected' (SHMI banding=3) when compared to the national baseline. 
+ 
+(Source: NHS Digital - https://digital.nhs.uk/data-and-information/publications/clinical-indicators/shmi/current/shmi-data)
+
+The SHMI is not a measure of quality of care. A higher/lower than expected number of deaths should not immediately be interpreted as indicating poor/good performance and instead should be viewed as a ‘smoke alarm’ which requires further investigation.
+
+The SHMI cannot be used to directly compare mortality outcomes between trusts and it is inappropriate to rank trusts by their SHMI. Instead, the SHMI banding can be used to compare mortality outcomes to the national baseline. If two trusts have the same SHMI banding, it cannot be concluded that the trust with the lower SHMI value has better mortality outcomes
+
+NHS Digital's interpretation guidance 
+https://files.digital.nhs.uk/96/EE14DB/SHMI%20interpretation%20guidance.pdf
+
+<u> Observed Deaths:</u>
+This is a count of the number of deaths which occurred in hospital or within 30 days of discharge for each trust. Deaths related to COVID-19 are excluded from the SHMI. If the patient is treated by another trust within those 30 days their death will only be attributed to the last non-specialist acute NHS trust to treat them. Specialist trusts, mental health trusts,  community trusts and independent sector providers are excluded from the SHMI. A full list of excluded NHS trusts can be found in Appendix C of the SHMI methodology specification document, which is available on the NHS Digital website at http://digital.nhs.uk/SHMI.
+
+<u> Expected Deaths: </u>
+The risk of the patient dying in hospital or within 30 days of discharge is estimated from statistical models based on the following variables:
+• the condition the patient is in hospital for
+• other underlying conditions the patient suffers from
+• the age of the patient
+• the sex of the patient
+• the method of admission to hospital (elective/non-elective/unknown)
+• the month of admission
+• the birthweight of the patient (perinatal diagnosis groups only)
+The expected number of deaths is obtained by summing the estimated risks for all finished provider spells for a trust.
+The statistical models are derived using thirty-six months of data from trusts throughout England. The final twelve months of this period are used to calculate the SHMI for each individual trust. Details of the dataset used in the SHMI calculation can be found in the SHMI publication timetable which is available on the NHS Digital website at http://digital.nhs.uk/SHMI.
+
+(Source: NHS Digital https://files.digital.nhs.uk/DB/48BBE9/SHMI%20FAQs.pdf)
+
+Information from NHS Digital, licenced under the current version of the Open Government Licence Source: https://digital.nhs.uk/data-and-information/publications/clinical-indicators/shmi
+
+### Excess deaths by condition
+
+The conditions with the highest excess deaths are shown.  Where there are more deaths than expected (excess deaths) these are shown in orange, and where there are fewer deaths than expected these are shown in green. The length of the bar is the total deaths (expected + excess deaths).  
+
+Row {.tabset}
+-------------------------------------
+
+### Activity
+
+<u>Crude mortality</u><br> 
+Number of patients dying in hospital or within 30 days of discharge divided by the number of spells.
+
+England is shown as a guide but due to variations in case mix you cannot draw any statistical comparison between the two.
+
+<u>Deaths for non-elective admissions</u><br>
+This indicator presents crude percentage rates of non-elective admissions where a death occurred either in-hospital or within 30 days (inclusive) of being discharged from hospital. 
+
+An adjustment is made for admission method in the SHMI methodology because crude mortality rates for elective admissions tend to be lower than crude mortality rates for non-elective admissions.
+
+To learn more go to:
+ https://files.digital.nhs.uk/65/85E399/SHMI%20contextual%20indicator%20specifications.zip
+
+<u>Deaths for elective admissions</u><br>
+This indicator presents crude percentage rates of elective admissions where a death occurred either in-hospital or within 30 days (inclusive) of being discharged from hospital.. 
+
+An adjustment is made for admission method in the SHMI methodology because crude mortality rates for elective admissions tend to be lower than crude mortality rates for non-elective admissions.
+
+To learn more go to: 
+ https://files.digital.nhs.uk/65/85E399/SHMI%20contextual%20indicator%20specifications.zip
+ 
+<U>Spells </u><br>Spells 
+Number of spells in a 12 month period. 
+
+More detail on how spells are constructed can be found here https://files.digital.nhs.uk/92/4DEC97/Provider%20spells%20methodology.zip
+ 
+<U>Observed and expected  </u><br>
+Count of deaths in hospital or within 30 days of discharge, and the expected deaths as produced by the SHMI model. 
+The difference between the observed and expected is highlighted.
+
+To learn more go to:
+https://files.digital.nhs.uk/02/3013C8/SHMI%20specification%20v1.32.pdf
+
+### Conditions
+
+<U>SHMI by diagnosis condition </u><br>
+The SHMI is composed of 142 different diagnosis groups   For a subset of diagnosis groups, an indication of whether the observed number of deaths within 30 days of discharge from hospital was 'higher than expected', 'as expected' or 'lower than expected' when compared to the national baseline is also provided. It is possible for conditions to have a statistically high or low SHMI, but if it is not in the subset it is not possible to identify these,  
+
+Due to the suppression applied by NHS Digital, the SHMI values may differ slightly compared to those published. The approach here has been to comprimse on precision and present a wider range of conditions.  
+
+To learn more go to: 
+https://files.digital.nhs.uk/02/3013C8/SHMI%20specification%20v1.32.pdf
+
+
+### Coding
+<U>Signs and symptoms</u><br>
+This indicator presents the percentage of finished provider spells with a primary diagnosis which is a symptom or sign (identified by ICD-10 codes beginning with the letter ‘R’).
+
+A high percentage  may indicate problems with data quality or timely diagnosis of patients, but may also reflect the case-mix of patients or the service model of the trust (e.g. a high level of admissions to acute admissions wards for assessment and stabilisation).
+
+<U>Depth of coding</u><br>
+This indicator presents the mean number of secondary diagnosis codes per finished provider spell (mean depth of coding) by elective and non-elective admission method, for each trust. A higher mean depth of coding may indicate a higher proportion of patients with multiple conditions and/or comorbidities, but may also be due to differences in coding practices between trusts.
+
+To learn more go to: 
+ https://files.digital.nhs.uk/65/85E399/SHMI%20contextual%20indicator%20specifications.zip
+
+To learn more go to:
+ https://files.digital.nhs.uk/65/85E399/SHMI%20contextual%20indicator%20specifications.zip
+ 
+### Palliative care
+
+<U>Palliative care coding</u><br>
+This indicator presents crude percentage rates of deaths reported in the SHMI with palliative care coding at either diagnosis or treatment specialty level.
+
+Note that the SHMI makes no adjustments for patients who are recorded as receiving palliative care. This is because there is considerable variation between trusts in the way that palliative care codes are used.
+
+To learn more go to: 
+ https://files.digital.nhs.uk/65/85E399/SHMI%20contextual%20indicator%20specifications.zip    
+ 
+<U> Place of death</u><br>
+
+This indicator presents crude percentage rates of deaths reported in the SHMI which occurred in hospital and deaths reported in the SHMI which occurred outside hospital within 30 days (inclusive) of discharge.
+
+To learn more go to: 
+ https://files.digital.nhs.uk/65/85E399/SHMI%20contextual%20indicator%20specifications.zip
+
+

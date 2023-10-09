@@ -1,0 +1,112 @@
+---
+title: "dashboard_condition_funnel"
+author: "Richard Wilson"
+output: html_document
+---
+
+### Funnel 
+
+```{r  funnel condition}
+
+library(FunnelPlotR)  #funnel plots
+
+by_condition_funnel <- data_shmi %>%
+  group_by(one_word) %>%
+  summarise(Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            balance_deaths = round(sum(RISK, na.rm=TRUE) + (sum(DIED) - sum(RISK, na.rm=TRUE)), 0)) %>%
+  mutate(
+#create series for survivors where excess deaths are <0
+    survivors = ifelse(Excess_deaths < 0, Excess_deaths, NA),
+#create series for excess mortality exc survivors
+    excess_mortality = ifelse(Excess_deaths > 0, Excess_deaths, NA)) %>%
+#to simplify chart presentation only show conditions with more than 5 deaths
+  filter(Observed >= 1)
+
+#create funnel for conditions using FunnelPlotR
+#call FunnelPlotR to create funnel chart data
+
+funnel_plot_data <- funnel_plot(numerator = by_condition_funnel$Observed,
+                                        denominator = by_condition_funnel$Expected,
+                                        group = by_condition_funnel$one_word,  title = "SHMI",
+                                        Poisson_limits = FALSE, OD_adjust = TRUE, sr_method = "SHMI",
+                                        label_outliers = FALSE)
+
+funnel_plot_data_condition <- funnel_plot_data$aggregated_data
+
+limits <- limits(funnel_plot_data)
+
+#tidy up column names into user friendly labels
+limits <- limits %>%
+  rename(limit_x = "number.seq") %>%
+  select(limit_x, ul95, ll95, ll998, ul998) %>%
+  filter(limit_x >= 1) %>%
+  arrange(ll95)
+
+funnel_plot_data_condition <- funnel_plot_data_condition %>%
+  rename(SHMI = "rr") %>%
+#create column to describe the 3 groups of points for the chart
+  mutate(
+#set up outlier points - this time there are two limits used 95 and 99.8% limits
+    linegroups = case_when(
+      SHMI > UCL99 ~"Higher than expected 99.8% limits",
+      SHMI > UCL95 ~ "Higher than expected 95% limits",
+      SHMI < LCL99 ~ "Lower than expected 99.8% limits",
+      SHMI < LCL95 ~ "Lower than expected 95% limits",
+      TRUE ~ "As expected"),
+#round SHMI to just 3 points
+        SHMI = round(SHMI, 3),
+#add column for excess deaths and for absolute version for sizing markers
+        `Excess deaths` = numerator - denominator,
+        abs_excess = abs(`Excess deaths`),
+#add shmi index line
+         index = 1) %>%
+  #tidy up user friendly labels
+rename(`Expected deaths` = "denominator") %>%
+rename(`Observed` = "numerator") %>%
+rename(`Lower limit` = "OD95LCL") %>%
+rename(`Upper limit` = "OD95UCL") %>%
+rename(Condition = "group")
+
+ylimMin <- min(funnel_plot_data_condition$SHMI, na.rm = TRUE)
+
+funnel_plot_data_condition <- funnel_plot_data_condition %>%
+  filter(`Expected deaths` >= 1) %>%
+   mutate(tooltip = paste0(Condition, ": ", SHMI))
+
+funnel_plot_condition <- ggplot() +
+  geom_line(funnel_plot_data_condition, mapping = aes(x = `Expected deaths`, y = index), linetype = 2, colour = "black") +
+  geom_point_interactive(funnel_plot_data_condition, mapping = aes(x = `Expected deaths`, y = SHMI, colour = linegroups, size = abs_excess, tooltip = tooltip)) +
+  geom_line(limits, mapping = aes(limit_x, ul95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll95), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ul998), colour = "grey") +
+  geom_line(limits, mapping = aes(x = limit_x, y = ll998), colour = "grey") +
+    scale_size("Excess deaths") +
+  scale_colour_manual_interactive(values = funnel.conditions.colors) +
+  labs(x = "Expected deaths", y = "SHMI", size = "Excess Deaths", shape = "Excess deaths")+
+ theme_i7() +
+  theme(
+                   plot.title =  element_text(size = rel(2)),
+                   axis.line.x =  element_blank(),
+                   axis.text.x =  element_text(size = rel(1)),
+                   axis.text.y =  element_text(size = rel(1)),
+                   axis.title.x =  element_text(size = rel(1.5)),
+                   axis.title.y =  element_text(size = rel(1.5)),
+                   legend.key = element_rect(fill = "white"),
+                   legend.position = "right",
+                   legend.text =  element_text(size = rel(1))
+                   )
+
+```
+
+```{r Condition funnel_chart, results = "asis", include = TRUE, fig.width = 12}
+
+girafe(ggobj = funnel_plot_condition,
+       width_svg = 12, height_svg = 4,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css,use_fill = TRUE)
+    ))
+```

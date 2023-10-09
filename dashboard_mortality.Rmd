@@ -1,0 +1,31 @@
+---
+title: "dashboard_mortality"
+author: "Richard Wilson"
+output: html_document
+---
+
+
+### Mortality
+
+```{r mortality prep}
+
+mortality_list <- c("SHMI", "Observed", "Expected", " Excess_deaths")
+
+mortality_chart <- summary_month_data %>%
+  pivot_longer(c(2:10), names_to = "measure") %>%
+  filter(measure %in% mortality_list) %>%
+  ggplot(aes(x = discharge_yyyy_mm, y = value)) +
+  geom_point() +
+  geom_line(group = 1, size = 1.5) +
+  xlab("Period") +
+  ylab("measure") +
+  facet_wrap(~measure, nrow = 1, scales = "free") +
+  scale_colour_manual(values = color_group) +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+```{r mortality charts, include = TRUE,  fig.hieght = 5, fig.width = 12}
+mortality_chart
+```

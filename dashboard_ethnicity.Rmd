@@ -1,0 +1,43 @@
+---
+title: "dashboard_ethnicity"
+author: "Richard Wilson"
+output: html_document
+---
+
+### Ethnicity
+
+```{r ethnicity}
+
+ethnicity_data <- data_shmi %>%
+  group_by(EthnicCategoryCode) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            SHMI = round(sum(DIED) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round(sum(DIED / n()) * 100, 2)
+            )
+
+
+ethnicity_data <- ethnicity_data %>%
+   mutate(tooltip = paste0(EthnicCategoryCode, "\n",
+                            "SHMI: ", round(SHMI, 2), " ")) %>%
+  ggplot(aes(x = EthnicCategoryCode, y = SHMI)) +
+  geom_col_interactive(aes(tooltip = tooltip), size = 0.75) +
+  xlab("Ethnicity") +
+  ylab("SHMI") +
+  scale_colour_manual(values = color_group) +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6))
+
+```
+
+```{r ethnicity chart tab, include = TRUE,  fig.hieght = 5, fig.width = 12}
+
+girafe(ggobj = ethnicity_data,
+       width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```

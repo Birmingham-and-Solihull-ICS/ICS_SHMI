@@ -1,0 +1,104 @@
+---
+title: "CUSUM"
+author: "Richard Wilson"
+output: html_document
+---
+
+```{r library}
+
+library(cusum)
+
+```
+
+```{r cusum, results = "asis"}
+
+#only do cusum for conditions with more than 5 deaths
+
+data_cusum <- data_shmi 
+
+diag_groups <- data_cusum %>%
+  group_by(DIAG_GROUP) %>%
+  summarise(deaths = sum(DIED, na.rm = TRUE)) %>%
+  filter(deaths > 50)
+
+cusum_output <- c("NA", "NA", "NA", "NA", "NA")
+
+cusum_output <- data.frame(t = integer(),
+                            p = double(),
+                           ct = double(),
+                           signal = integer(),
+                           limit = double(),
+                           ct05 = double(),
+                           DIAG_GROUP = integer())
+
+for (j in diag_groups$DIAG_GROUP) {
+patient_data <- data_cusum %>%
+  filter(DIAG_GROUP == j)
+
+patient_data <- na.omit(patient_data)
+
+patient_risks <- patient_data$RISK
+
+ctA05 <- racusum_limit_sim(patient_risks,
+                                   odds_multiplier = 2,
+                                   n_simulation = 1000,
+                                   alpha = 0.05,
+                                   seed = 2046)
+
+racusum_limitA005 <- racusum_limit_sim(patient_risks,
+                                   odds_multiplier = 2,
+                                   n_simulation = 1000,
+                                   alpha = 0.005,
+                                   seed = 2046)
+
+patient_outcomes <- patient_data$DIED
+
+racusum_cs <- racusum(patient_risks,
+                      patient_outcomes,
+                      limit = racusum_limitA005,
+                      odds_multiplier = 2,
+                      reset = TRUE)
+
+racusum_cs$DIAG_GROUP <- j
+racusum_cs$ctA05 <- ctA05
+
+cusum_output <- rbind(cusum_output, racusum_cs)
+
+}
+
+cusum_alerts <- cusum_output %>%
+  filter(signal == 1) %>%
+  select(DIAG_GROUP) %>%
+  group_by(DIAG_GROUP)
+
+if (nrow(cusum_alerts)>0){
+cusum_charts <- inner_join(cusum_output, cusum_alerts)
+cusum_charts <- inner_join(cusum_charts, SHMI_groups, by = c("DIAG_GROUP" = "SHMI_DIAGNOSIS_GROUP"))
+
+cusum_chart_plots <- cusum_charts %>%
+  mutate(
+  cusum_flag_y = ifelse(signal == 1, 0, NA)) %>%
+  ggplot(aes(x = t, y = ct)) +
+  geom_line() +
+  geom_line(aes(x = t, y = limit)) +
+  geom_line(aes(x = t, y = ctA05), colour = "grey") +
+  geom_point(aes(x = t, y = cusum_flag_y), colour = "red") +
+  labs(x = "Patient", y = "CT") +
+  facet_wrap(~one_word, scales = "free_x") +
+  theme_i7()
+}
+
+
+
+```
+
+
+### CUSUM alerts
+
+```{r  CUSUM alerts, include=TRUE,  fig.hieght = 5 ,fig.width = 16}
+if (nrow(cusum_alerts) > 0) {
+cusum_chart_plots
+} else {
+  print("No conditions with 5 or more excess deaths and a CUSUM alert")
+  }
+```

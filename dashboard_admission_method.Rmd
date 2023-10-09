@@ -1,0 +1,62 @@
+---
+title: "dashboard_admission_method"
+author: "Richard Wilson"
+output: html_document
+---
+
+### Admission method
+
+```{r elective non elective charts}
+
+EE_list <- c("Discharges", "Observed", "Crude_rate", "SHMI", "Excess_deaths")
+
+EE_data <- data_shmi %>%
+  group_by(discharge_yyyy_mm, admission_method) %>%
+  summarise(Discharges = n(),
+            Expected = round(sum(RISK, na.rm=TRUE), 0),
+            Observed = sum(DIED),
+            SHMI = round(sum(DIED) / sum(RISK, na.rm=TRUE), 3),
+            Excess_deaths = round(sum(DIED) - sum(RISK, na.rm=TRUE), 0),
+            Crude_rate = round(sum(DIED / n()) * 100, 2)
+            )
+
+EE_data <- pivot_longer(EE_data, c(3:8), names_to = "measure")
+
+EE_data <- EE_data %>%
+  filter(measure %in% EE_list) %>%
+  mutate(unit = case_when(
+      measure == "Discharges" ~ "Discharges",
+      measure == "Observed" ~ "Deaths",
+      measure == "SHMI" ~ "",
+      measure == "Excess_deaths" ~ "Deaths",
+      measure == "Crude_rate" ~ "%",
+      measure == "Excess_deaths" ~ "Deaths",
+      TRUE ~"NA"
+    )
+  )
+
+EE_chart <- EE_data %>%
+  filter(admission_method %in% c("Acute", "Elective", "Unknown")) %>%
+   mutate(tooltip = paste0(admission_method, "\n",
+                            measure, ": ", round(value, 1), " ", unit)) %>%
+  ggplot(aes(x = discharge_yyyy_mm, y = value, color = admission_method)) +
+  geom_line(aes(group = admission_method), size = 1.25) +
+  geom_point_interactive(aes(tooltip = tooltip), size = 0.75) +
+  xlab("Period") +
+  ylab("measure") +
+  facet_wrap(~measure, nrow = 1, scales = "free") +
+  scale_colour_manual(values = color_group) +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6))
+
+```
+
+```{r ee chart tab, include = TRUE,  fig.hieght = 5, fig.width = 12}
+
+girafe(ggobj = EE_chart,
+       width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```

@@ -1,0 +1,35 @@
+---
+title: "Risk"
+author: "Richard Wilson"
+output: html_document
+---
+
+### Risk
+
+```{r risk,  results = "asis"}
+
+risk_condition <- data_shmi %>%  
+  group_by(DIED)
+
+risk_chart <- risk_condition %>%
+   mutate(tooltip = paste0(round(RISK, 1))) %>%
+  ggplot(aes(RISK)) +
+  geom_histogram_interactive(aes(tooltip = ..count.., ), binwidth = 0.05) +
+  xlab("Period") +
+  facet_wrap(~DIED, nrow = 1, scales = "free") +
+  scale_colour_manual(values = color_group) +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+```{r risk__chart chart tab, include = TRUE, fig.hieght = 5,fig.width = 12}
+
+girafe(ggobj = risk_chart,
+       width_svg = 12, height_svg = 5,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+``` 
+ 

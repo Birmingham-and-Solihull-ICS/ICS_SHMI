@@ -1,0 +1,62 @@
+---
+title: "End of life pathway"
+author: "Richard Wilson"
+output: html_document
+---
+
+### End of life pathway
+
+```{r eol, results = "asis"}
+
+library(gridExtra)
+
+eolpathway <- data_shmi %>%
+ filter( endoflifepathway != "Alive") %>%
+  group_by(discharge_yyyy_mm, endoflifepathway) %>%
+  summarise(Discharges = n()) %>%
+  select(discharge_yyyy_mm, endoflifepathway, Discharges)
+
+eol_spells_cht <- ggplot(eolpathway, aes(x = discharge_yyyy_mm, y = Discharges, group = endoflifepathway, color = endoflifepathway)) +
+  geom_line(size = 1.5) +
+  geom_point() +
+  xlab("") +
+  ylab("") +
+  theme_i7() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+eol_spells_pct <- ggplot(eolpathway, aes(x = discharge_yyyy_mm, y = Discharges)) +
+  geom_col(aes(fill = endoflifepathway), position = "fill") +
+  ylab("% Spells") +
+  theme_i7() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+#select only last 90 days (3 months) and add count of number of spells for patients who died
+patient_died <- data_shmi %>%
+  filter(DIED == 1 ) %>%
+  select(LOPATID, last_spell)
+
+last3months <- inner_join(data_shmi, patient_died)
+
+last3months <- last3months %>%
+  filter(discharge_date > last_spell - 90) %>%
+  group_by(LOPATID) %>%
+  drop_na(LOPATID) %>%
+  summarise(inlast3months = n(), Dischargeswithpalliativecare = sum(PalliativeCare, na.rm = TRUE))
+
+last3months_cht_data <- last3months %>%
+  group_by(inlast3months) %>%
+  summarise(Dischargeswithpalliativecare = sum(Dischargeswithpalliativecare),
+            Discharges = sum(inlast3months),
+            Pct_palliative = round(sum(Dischargeswithpalliativecare) / sum(Discharges) * 100, 1))
+
+last3months_cht <- ggplot(last3months_cht_data, aes(x = inlast3months, y = Pct_palliative)) +
+  geom_col() +
+  xlab("number of discharges in last 3 months of life") +
+  theme_i7()
+
+```
+
+
+```{r pod chart tab, include = TRUE, fig.hieght = 5, fig.width = 12}
+plotlist <- list(eol_spells_cht, eol_spells_pct, last3months_cht)
+grid.arrange(grobs = plotlist, nrow = 1)
+```
