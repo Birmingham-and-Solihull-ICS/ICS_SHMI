@@ -1,0 +1,39 @@
+---
+title: "dashboard_activity"
+author: "Richard Wilson"
+output: html_document
+---
+
+
+### Activity
+
+```{r activity prep}
+
+activity_list <- c("Spells", "Observed")
+
+activity_chart <- summary_month_data %>%
+  pivot_longer(c(2:10), names_to = "measure") %>%
+  filter(measure %in% activity_list) %>%
+  mutate(
+    tooltip = paste0(discharge_yyyy_mm, "\n",
+                   measure, "; ", value)
+  ) %>%
+  ggplot(aes(x = discharge_yyyy_mm, y = value)) +
+  geom_col() +
+  geom_col_interactive(aes(tooltip = tooltip), position = position_stack(reverse = TRUE)) +
+  xlab("Period") +
+  ylab("Count") +
+  facet_wrap(~measure, nrow =  1, scales = "free") +
+  scale_colour_manual(values = color_group) +
+  theme_i7() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+```{r activity charts,  include=TRUE, fig.hieght=5,fig.width=12}
+
+girafe(ggobj = activity_chart,
+                       options = list(
+                       opts_sizing(rescale = FALSE),
+                         opts_tooltip(css = tooltip_css, use_fill = TRUE)
+    ))
+```
